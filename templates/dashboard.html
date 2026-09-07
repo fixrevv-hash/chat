@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ruang Kendali Balasan</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">Balas<span>Otomatis</span></div>
+
+      <div class="status-block">
+        <div class="status-label">
+          <span class="status-dot" id="statusDot"></span>
+          <span id="statusText">Memuat...</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="toggleActive" />
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="stats-list">
+        <div class="stat-item">
+          <div class="stat-value" id="statMessages">–</div>
+          <div class="stat-label">Pesan 24 jam terakhir</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="statContacts">–</div>
+          <div class="stat-label">Kontak yang menghubungi</div>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <button class="btn-persona" id="openPanel">Atur Kepribadian AI</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <h1>Percakapan berlangsung</h1>
+        <div class="last-activity" id="lastActivity"></div>
+      </div>
+      <div class="feed" id="feed">
+        <div class="feed-empty">Belum ada percakapan masuk.</div>
+      </div>
+    </main>
+  </div>
+
+  <div class="overlay" id="overlay"></div>
+  <div class="panel" id="panel">
+    <h2>Kepribadian &amp; gaya balasan</h2>
+    <p class="hint">Instruksi ini menentukan bagaimana AI membalas atas namamu. Perubahan berlaku langsung untuk pesan berikutnya.</p>
+    <textarea id="personaText" spellcheck="false"></textarea>
+
+    <div class="delay-row">
+      <div class="delay-field">
+        <label for="delayMin">Jeda balas minimum (detik)</label>
+        <input type="number" id="delayMin" min="0" step="0.5" />
+      </div>
+      <div class="delay-field">
+        <label for="delayMax">Jeda balas maksimum (detik)</label>
+        <input type="number" id="delayMax" min="0" step="0.5" />
+      </div>
+    </div>
+
+    <div class="panel-actions">
+      <span class="save-flash" id="saveFlash">Tersimpan</span>
+      <button class="btn btn-ghost" id="closePanel">Tutup</button>
+      <button class="btn btn-primary" id="savePersona">Simpan</button>
+    </div>
+  </div>
+
+  <script>
+    const feedEl = document.getElementById('feed');
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const toggleActive = document.getElementById('toggleActive');
+    const statMessages = document.getElementById('statMessages');
+    const statContacts = document.getElementById('statContacts');
+    const lastActivity = document.getElementById('lastActivity');
+    const personaText = document.getElementById('personaText');
+    const delayMin = document.getElementById('delayMin');
+    const delayMax = document.getElementById('delayMax');
+    const panel = document.getElementById('panel');
+    const overlay = document.getElementById('overlay');
+    const saveFlash = document.getElementById('saveFlash');
+
+    let renderedIds = new Set();
+    let personaLoaded = false;
+
+    function timeAgo(ts) {
+      if (!ts) return 'Belum ada aktivitas';
+      const diff = Date.now() / 1000 - ts;
+      if (diff < 60) return 'Baru saja';
+      if (diff < 3600) return Math.floor(diff / 60) + ' menit lalu';
+      if (diff < 86400) return Math.floor(diff / 3600) + ' jam lalu';
+      return Math.floor(diff / 86400) + ' hari lalu';
+    }
+
+    function formatClock(ts) {
+      const d = new Date(ts * 1000);
+      return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function renderMessages(messages) {
+      if (messages.length === 0) {
+        feedEl.innerHTML = '<div class="feed-empty">Belum ada percakapan masuk.</div>';
+        return;
+      }
+
+      let lastContact = null;
+      const frag = document.createDocumentFragment();
+
+      messages.forEach(msg => {
+        const isNew = !renderedIds.has(msg.id);
+        renderedIds.add(msg.id);
+
+        if (msg.contact_name !== lastContact) {
+          const header = document.createElement('div');
+          header.className = 'thread-header';
+          header.textContent = msg.contact_name;
+          frag.appendChild(header);
+          lastContact = msg.contact_name;
+        }
+
+        const row = document.createElement('div');
+        row.className = 'bubble-row ' + msg.direction + (isNew ? ' new-item' : '');
+
+        const bubble = document.createElement('div');
+        bubble.innerHTML = `<div class="bubble">${escapeHtml(msg.content)}</div><div class="bubble-time">${formatClock(msg.ts)}</div>`;
+        row.appendChild(bubble);
+        frag.appendChild(row);
+      });
+
+      feedEl.innerHTML = '';
+      feedEl.appendChild(frag);
+      feedEl.scrollTop = feedEl.scrollHeight;
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    async function refresh() {
+      try {
+        const res = await fetch('/api/state');
+        const data = await res.json();
+
+        statusDot.classList.toggle('off', !data.active);
+        statusText.textContent = data.active ? 'Aktif' : 'Nonaktif';
+        toggleActive.checked = data.active;
+
+        statMessages.textContent = data.stats.messages_today;
+        statContacts.textContent = data.stats.active_contacts;
+        lastActivity.textContent = 'Terakhir aktif: ' + timeAgo(data.stats.last_activity);
+
+        if (!personaLoaded) {
+          personaText.value = data.persona;
+          delayMin.value = data.reply_delay_min;
+          delayMax.value = data.reply_delay_max;
+          personaLoaded = true;
+        }
+
+        renderMessages(data.messages);
+      } catch (e) {
+        console.error('Gagal memuat status', e);
+      }
+    }
+
+    toggleActive.addEventListener('change', async () => {
+      await fetch('/api/toggle', { method: 'POST' });
+      refresh();
+    });
+
+    document.getElementById('openPanel').addEventListener('click', () => {
+      panel.classList.add('visible');
+      overlay.classList.add('visible');
+    });
+
+    document.getElementById('closePanel').addEventListener('click', closePanel);
+    overlay.addEventListener('click', closePanel);
+
+    function closePanel() {
+      panel.classList.remove('visible');
+      overlay.classList.remove('visible');
+    }
+
+    document.getElementById('savePersona').addEventListener('click', async () => {
+      await fetch('/api/persona', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ persona: personaText.value }),
+      });
+      await fetch('/api/delay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reply_delay_min: parseFloat(delayMin.value),
+          reply_delay_max: parseFloat(delayMax.value),
+        }),
+      });
+      saveFlash.classList.add('visible');
+      setTimeout(() => saveFlash.classList.remove('visible'), 1800);
+    });
+
+    refresh();
+    setInterval(refresh, 3000);
+  </script>
+</body>
+</html>
