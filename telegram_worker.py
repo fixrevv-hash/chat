@@ -24,7 +24,7 @@ MAX_HISTORY_MESSAGES = 12
 # Model gratis Gemini. "gemini-1.5-flash" dipilih karena limit harian free tier-nya
 # paling longgar (cocok untuk auto-reply personal). Bisa diganti "gemini-2.5-flash"
 # di bawah kalau mau kualitas sedikit lebih tinggi (limit hariannya lebih ketat).
-GEMINI_MODEL = "gemini-3.6-flash"
+GEMINI_MODEL = "gemini-3.1-flash-lite"
 
 # Riwayat percakapan sementara di memori (per user_id), format Gemini: role "user"/"model"
 chat_history: dict[int, list[dict]] = {}
