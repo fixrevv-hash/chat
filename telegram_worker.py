@@ -106,17 +106,16 @@ async def run_worker(client: TelegramClient):
 
         try:
             await client.send_read_acknowledge(event.chat_id)
-            await client.action(event.chat_id, "typing")
 
             persona = config.get("persona", "")
-            reply_text = _generate_reply(user_id, incoming_text, persona)
-
-            _add_history(user_id, "user", incoming_text)
-            _add_history(user_id, "model", reply_text)
-
             delay_min = float(config.get("reply_delay_min", 2))
             delay_max = float(config.get("reply_delay_max", 5))
-            await asyncio.sleep(_human_delay(reply_text, delay_min, delay_max))
+
+            async with client.action(event.chat_id, "typing"):
+                reply_text = _generate_reply(user_id, incoming_text, persona)
+                _add_history(user_id, "user", incoming_text)
+                _add_history(user_id, "model", reply_text)
+                await asyncio.sleep(_human_delay(reply_text, delay_min, delay_max))
 
             await event.reply(reply_text)
             await db.log_message(user_id, contact_name, "out", reply_text)
